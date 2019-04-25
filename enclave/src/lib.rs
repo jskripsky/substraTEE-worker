@@ -45,6 +45,7 @@ use sgx_crypto_helper::RsaKeyPair;
 use sgx_crypto_helper::rsa3072::Rsa3072KeyPair;
 
 pub const KEYFILE: &'static str = "sealed_rsa_key.bin";
+pub const COUNTERSTATE: &'static str = "sealed_counter_state.bin";
 
 #[no_mangle]
 pub extern "C" fn create_sealed_key(sealed_seed: * mut u8, sealed_seed_size: u32, pubkey: * mut u8, pubkey_size: u32) -> sgx_status_t {
@@ -73,13 +74,13 @@ pub extern "C" fn create_sealed_key(sealed_seed: * mut u8, sealed_seed_size: u32
     let (_privkey, _pubkey) = keypair(&seed);
 
     println!("[Enclave] generated sealed keyair with pubkey: {:?}", _pubkey.to_base58());
-    
+
     // now write pubkey back to caller
     let pubkey_slice = unsafe {
         slice::from_raw_parts_mut(pubkey, pubkey_size as usize)
     };
     pubkey_slice.clone_from_slice(&_pubkey);
-    
+
     // also create a RSA keypair
     let rsa_keypair = Rsa3072KeyPair::new().unwrap();
     let rsa_key_json = serde_json::to_string(&rsa_keypair).unwrap();
@@ -106,7 +107,7 @@ pub extern "C" fn create_sealed_key(sealed_seed: * mut u8, sealed_seed_size: u32
 }
 
 #[no_mangle]
-pub extern "C" fn sign(sealed_seed: * mut u8, sealed_seed_size: u32, 
+pub extern "C" fn sign(sealed_seed: * mut u8, sealed_seed_size: u32,
                         msg: * mut u8, msg_size: u32,
                         sig: * mut u8, sig_size: u32) -> sgx_status_t {
 
@@ -172,7 +173,7 @@ pub extern "C" fn decrypt(ciphertext: * mut u8, ciphertext_size: u32) -> sgx_sta
     };
     //println!("[Enclave] key_json = {}", key_json_str);
     let rsa_keypair: Rsa3072KeyPair = serde_json::from_str(&key_json_str).unwrap();
-    
+
     let mut plaintext = Vec::new();
     rsa_keypair.decrypt_buffer(&ciphertext_slice, &mut plaintext).unwrap();
 
@@ -219,13 +220,13 @@ pub extern "C" fn get_rsa_encryption_pubkey(pubkey: * mut u8, pubkey_size: u32) 
     };
 
     let _pubkey_json = serde_json::to_string(&_pubkey).unwrap();
-    println!("[Enclave] pubkey is: {}", _pubkey_json);   
+    println!("[Enclave] pubkey is: {}", _pubkey_json);
 */
     // now write pubkey back to caller
     let pubkey_slice = unsafe {
         slice::from_raw_parts_mut(pubkey, pubkey_size as usize)
     };
-    
+
     let keypair_json = match serde_json::to_string(&rsa_keypair) {
         Ok(k) => k,
         Err(x) => {
@@ -235,13 +236,66 @@ pub extern "C" fn get_rsa_encryption_pubkey(pubkey: * mut u8, pubkey_size: u32) 
     };
     println!("[Enclave] len pubkey_slice: {}", pubkey_slice.len());
     println!("[Enclave] len keypair_json: {}", keypair_json.len());
- 
+
     let (left, right) = pubkey_slice.split_at_mut(keypair_json.len());
     left.clone_from_slice(keypair_json.as_bytes());
     right.iter_mut().for_each(|x| *x = 0x20);
 
     //println!("[Enclave] enclave function success");
     sgx_status_t::SGX_SUCCESS
+}
+
+#[no_mangle]
+pub extern "C" fn increment_counter() -> sgx_status_t {
+	let mut retval = sgx_status_t::SGX_SUCCESS;
+
+	let mut state_vec: Vec<u8> = Vec::new();
+
+	let counter = match SgxFile::open(COUNTERSTATE) {
+		Ok(mut f) => match f.read_to_end(&mut state_vec) {
+			Ok(len) => {
+				println!("[Enclave] Read Counter Value {:?}", state_vec);
+				state_vec
+			}
+			Err(x) => {
+				println!("[Enclave] Read counter failed {}", x);
+				return sgx_status_t::SGX_ERROR_UNEXPECTED;
+			}
+		},
+		Err(x) => {
+			println!("[Enclave] No counter found initialising counter: {}", x);
+			retval = create_counter_state();
+			return retval;
+		}
+	};
+
+	retval = write_counter_state(counter[0] +1);
+	return retval;
+}
+
+fn create_counter_state() -> sgx_status_t {
+	let mut c_init = 1u8;
+	println!("[Enclave] Init value of counter: {:?}", &c_init);
+	write_counter_state(c_init)
+}
+
+fn write_counter_state(value: u8) -> sgx_status_t {
+	match SgxFile::create(COUNTERSTATE) {
+		Ok(mut f) => match f.write_all(&[value]) {
+			Ok(()) => {
+				println!("[Enclave] SgxFile write state file success!");
+				sgx_status_t::SGX_SUCCESS
+			}
+			Err(x) => {
+				println!("[Enclave] SgxFile write state file failed! {}", x);
+				sgx_status_t::SGX_ERROR_UNEXPECTED
+			}
+		},
+		Err(x) => {
+			println!("[Enclave] SgxFile create file {} error {}", COUNTERSTATE, x);
+			sgx_status_t::SGX_ERROR_UNEXPECTED
+		}
+	}
 }
 
 fn to_sealed_log<T: Copy + ContiguousMemory>(sealed_data: &SgxSealedData<T>, sealed_log: * mut u8, sealed_log_size: u32) -> Option<* mut sgx_sealed_data_t> {

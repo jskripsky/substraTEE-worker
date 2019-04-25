@@ -56,6 +56,9 @@ extern {
     fn decrypt(eid: sgx_enclave_id_t, retval: *mut sgx_status_t,
         ciphertext: * mut u8, ciphertext_size: u32) -> sgx_status_t;
 
+	fn increment_counter(eid: sgx_enclave_id_t, retval: *mut sgx_status_t,
+		) -> sgx_status_t;
+
 }
 
 fn init_enclave() -> SgxResult<SgxEnclave> {
@@ -256,17 +259,50 @@ fn sealed_key() {
     enclave.destroy();
 }
 
-fn main() {
-    let yml = load_yaml!("cli.yml");
-    let matches = App::from_yaml(yml).get_matches();
+fn count() {
+	let enclave = match init_enclave() {
+		Ok(r) => {
+			println!("[+] Init Enclave Successful {}!", r.geteid());
+			r
+		},
+		Err(x) => {
+			println!("[-] Init Enclave Failed {}!", x.as_str());
+			return;
+		},
+	};
 
-    if matches.is_present("sealedkey") {
-        println!("* Starting substraTEE-worker");
-        println!("** Generating sealed key");
-        println!("");
-        sealed_key();
-    }
-    else {
-        println!("For options: use --help");
-    }
+	let mut retval = sgx_status_t::SGX_SUCCESS;
+
+
+	let result = unsafe {
+		increment_counter(enclave.geteid(),
+		&mut retval
+		)
+	};
+
+	match result {
+		sgx_status_t::SGX_SUCCESS => {},
+		_ => {
+			println!("[-] ECALL Enclave Failed {}!", result.as_str());
+			return;
+		}
+	}
+
+	enclave.destroy();
+}
+
+fn main() {
+//    let yml = load_yaml!("cli.yml");
+//    let matches = App::from_yaml(yml).get_matches();
+//
+//    if matches.is_present("sealedkey") {
+//        println!("* Starting substraTEE-worker");
+//        println!("** Generating sealed key");
+//        println!("");
+//        sealed_key();
+//    }
+//    else {
+//        println!("For options: use --help");
+//    }
+	count()
 }
