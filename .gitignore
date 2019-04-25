@@ -11,3 +11,18 @@ Cargo.lock
 
 # binaries
 bin/*.so
+bin/app
+
+#intelliJ
+.idea/
+*.iml
+
+# generated enclave files
+app/Enclave_u.*
+app/libEnclave_u.*
+enclave/Enclave_t.*
+enclave/enclave.so
+lib/libEnclave_u.*
+lib/libcompiler-rt-patch.a
+lib/libenclave.a
+sealed_counter_state.bin
