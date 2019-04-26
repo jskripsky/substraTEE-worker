@@ -45,6 +45,8 @@ use std::sgxfs::SgxFile;
 use std::slice;
 use std::string::String;
 use std::vec::Vec;
+use std::borrow::ToOwned;
+use std::collections::HashMap;
 use crypto::ed25519::{keypair, signature};
 use rust_base58::{ToBase58};
 use sgx_crypto_helper::RsaKeyPair;
@@ -260,8 +262,6 @@ pub extern "C" fn increment_counter() -> sgx_status_t {
 	let counter_str = match SgxFile::open(COUNTERSTATE) {
 		Ok(mut f) => match f.read_to_end(&mut state_vec) {
 			Ok(len) => {
-//				let r = std::str::from_utf8(&state_vec).unwrap();
-				println!("[Enclave] Read Counter Value {:?}", state_vec);
 				state_vec
 			}
 			Err(x) => {
@@ -276,28 +276,31 @@ pub extern "C" fn increment_counter() -> sgx_status_t {
 		}
 	};
 
-	let helper = DeSerializeHelper::<PCount>::new(counter_str);
+	let helper = DeSerializeHelper::<AllCounts>::new(counter_str);
 	let mut counter = helper.decode().unwrap();
-	println!("Parsed Counter: {:?}", counter);
-	counter.count = counter.count +1;
+
+	*counter.entries.get_mut("alice").unwrap() += 1;
+	println!("Incremented counter: {:?}", counter);
 
 	retval = write_counter_state(counter);
 	return retval;
 }
 
 #[derive(Serializable, DeSerializable, Debug)]
-struct PCount {
-	addr: u32,
-	count: u8
+struct AllCounts {
+	entries: HashMap<String, u8>
 }
 
 fn create_counter_state() -> sgx_status_t {
-	let mut c_init = PCount { addr: 2, count: 1};
-	println!("[Enclave] Init value of counter: {:?}", &c_init);
+	let mut c_init = AllCounts{ entries: HashMap::<String, u8>::new()};
+
+	let s : String = "alice".to_owned();
+	c_init.entries.insert(s, 1);
+	println!("[Enclave] Init new counter: {:?}", &c_init);
 	write_counter_state(c_init)
 }
 
-fn write_counter_state(value: PCount) -> sgx_status_t {
+fn write_counter_state(value: AllCounts) -> sgx_status_t {
 	let helper = SerializeHelper::new();
 	let c = helper.encode(value).unwrap();
 	match SgxFile::create(COUNTERSTATE) {
