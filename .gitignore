@@ -10,8 +10,7 @@ Cargo.lock
 **/*.rs.bk
 
 # binaries
-bin/*.so
-bin/app
+bin/
 
 #intelliJ
 .idea/
@@ -26,3 +25,5 @@ lib/libEnclave_u.*
 lib/libcompiler-rt-patch.a
 lib/libenclave.a
 sealed_counter_state.bin
+
+rust-sgx-sdk/
