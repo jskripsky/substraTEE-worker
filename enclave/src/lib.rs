@@ -29,11 +29,17 @@ extern crate crypto;
 extern crate rust_base58;
 extern crate serde_json;
 extern crate sgx_crypto_helper;
+extern crate sgx_serialize;
 
 use sgx_types::{sgx_status_t, sgx_sealed_data_t};
 use sgx_types::marker::ContiguousMemory;
 use sgx_tseal::{SgxSealedData};
 use sgx_rand::{Rng, StdRng};
+use sgx_serialize::{SerializeHelper, DeSerializeHelper, Serializable};
+#[macro_use]
+extern crate sgx_serialize_derive;
+use sgx_serialize::*;
+
 use std::io::{self, Read, Write};
 use std::sgxfs::SgxFile;
 use std::slice;
@@ -254,7 +260,8 @@ pub extern "C" fn increment_counter() -> sgx_status_t {
 	let counter = match SgxFile::open(COUNTERSTATE) {
 		Ok(mut f) => match f.read_to_end(&mut state_vec) {
 			Ok(len) => {
-				println!("[Enclave] Read Counter Value {:?}", state_vec);
+				let r = std::str::from_utf8(&state_vec).unwrap();
+				println!("[Enclave] Read Counter Value {:?}", r);
 				state_vec
 			}
 			Err(x) => {
@@ -269,23 +276,32 @@ pub extern "C" fn increment_counter() -> sgx_status_t {
 		}
 	};
 
-	retval = write_counter_state(counter[0] +1);
+//	retval = write_counter_state(counter[0] +1);
 	return retval;
 }
 
+#[derive(Serializable, DeSerializable, Debug)]
+struct PCount {
+	addr: u32,
+	count: u8
+}
+
 fn create_counter_state() -> sgx_status_t {
-	let mut c_init = 1u8;
+	let mut c_init = PCount { addr: 2, count: 1};
 	println!("[Enclave] Init value of counter: {:?}", &c_init);
 	write_counter_state(c_init)
 }
 
-fn write_counter_state(value: u8) -> sgx_status_t {
+fn write_counter_state(value: PCount) -> sgx_status_t {
+	let helper = SerializeHelper::new();
+	let c = helper.encode(value).unwrap();
 	match SgxFile::create(COUNTERSTATE) {
-		Ok(mut f) => match f.write_all(&[value]) {
+		Ok(mut f) => match f.write_all(&c) {
 			Ok(()) => {
 				println!("[Enclave] SgxFile write state file success!");
 				sgx_status_t::SGX_SUCCESS
 			}
+
 			Err(x) => {
 				println!("[Enclave] SgxFile write state file failed! {}", x);
 				sgx_status_t::SGX_ERROR_UNEXPECTED
