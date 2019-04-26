@@ -35,7 +35,7 @@ use sgx_types::{sgx_status_t, sgx_sealed_data_t};
 use sgx_types::marker::ContiguousMemory;
 use sgx_tseal::{SgxSealedData};
 use sgx_rand::{Rng, StdRng};
-use sgx_serialize::{SerializeHelper, DeSerializeHelper, Serializable};
+use sgx_serialize::{SerializeHelper, DeSerializeHelper};
 #[macro_use]
 extern crate sgx_serialize_derive;
 use sgx_serialize::*;
@@ -257,11 +257,11 @@ pub extern "C" fn increment_counter() -> sgx_status_t {
 
 	let mut state_vec: Vec<u8> = Vec::new();
 
-	let counter = match SgxFile::open(COUNTERSTATE) {
+	let counter_str = match SgxFile::open(COUNTERSTATE) {
 		Ok(mut f) => match f.read_to_end(&mut state_vec) {
 			Ok(len) => {
-				let r = std::str::from_utf8(&state_vec).unwrap();
-				println!("[Enclave] Read Counter Value {:?}", r);
+//				let r = std::str::from_utf8(&state_vec).unwrap();
+				println!("[Enclave] Read Counter Value {:?}", state_vec);
 				state_vec
 			}
 			Err(x) => {
@@ -276,7 +276,12 @@ pub extern "C" fn increment_counter() -> sgx_status_t {
 		}
 	};
 
-//	retval = write_counter_state(counter[0] +1);
+	let helper = DeSerializeHelper::<PCount>::new(counter_str);
+	let mut counter = helper.decode().unwrap();
+	println!("Parsed Counter: {:?}", counter);
+	counter.count = counter.count +1;
+
+	retval = write_counter_state(counter);
 	return retval;
 }
 
