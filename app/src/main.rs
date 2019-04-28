@@ -57,7 +57,7 @@ extern {
         ciphertext: * mut u8, ciphertext_size: u32) -> sgx_status_t;
 
 	fn increment_counter(eid: sgx_enclave_id_t, retval: *mut sgx_status_t,
-		) -> sgx_status_t;
+						 account: *const str, account_size: u32) -> sgx_status_t;
 
 }
 
@@ -259,7 +259,7 @@ fn sealed_key() {
     enclave.destroy();
 }
 
-fn count() {
+fn count(account: &str) {
 	let enclave = match init_enclave() {
 		Ok(r) => {
 			println!("[+] Init Enclave Successful {}!", r.geteid());
@@ -273,10 +273,11 @@ fn count() {
 
 	let mut retval = sgx_status_t::SGX_SUCCESS;
 
-
 	let result = unsafe {
 		increment_counter(enclave.geteid(),
-		&mut retval
+		&mut retval,
+		account,
+		account.len() as u32
 		)
 	};
 
@@ -300,9 +301,14 @@ fn main() {
 //        println!("** Generating sealed key");
 //        println!("");
 //        sealed_key();
-//    }
+//    } else if matches.is_present("count") {
+//		println!("Counter mode");
+//		let account = matches.value_of("count").unwrap().to_owned();
+//		count(account)
+//	}
 //    else {
 //        println!("For options: use --help");
 //    }
-	count()
+	let acc = String::from("alice");
+	count(&acc[..])
 }

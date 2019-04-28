@@ -47,6 +47,7 @@ use std::string::String;
 use std::vec::Vec;
 use std::borrow::ToOwned;
 use std::collections::HashMap;
+use std::string::ToString;
 use crypto::ed25519::{keypair, signature};
 use rust_base58::{ToBase58};
 use sgx_crypto_helper::RsaKeyPair;
@@ -254,9 +255,11 @@ pub extern "C" fn get_rsa_encryption_pubkey(pubkey: * mut u8, pubkey_size: u32) 
 }
 
 #[no_mangle]
-pub extern "C" fn increment_counter() -> sgx_status_t {
-	let mut retval = sgx_status_t::SGX_SUCCESS;
+pub extern "C" fn increment_counter(account: *const u8, account_size: u32) -> sgx_status_t {
 
+	let mut retval = sgx_status_t::SGX_SUCCESS;
+	let account_slice = unsafe { slice::from_raw_parts(account, account_size as usize) };
+	let acc_str = std::str::from_utf8(account_slice).unwrap();
 	let mut state_vec: Vec<u8> = Vec::new();
 
 	let counter_str = match SgxFile::open(COUNTERSTATE) {
@@ -272,6 +275,7 @@ pub extern "C" fn increment_counter() -> sgx_status_t {
 		Err(x) => {
 			println!("[Enclave] No counter found initialising counter: {}", x);
 			retval = create_counter_state();
+			println!("[Enclave] Initialised Counter");
 			return retval;
 		}
 	};
@@ -279,8 +283,13 @@ pub extern "C" fn increment_counter() -> sgx_status_t {
 	let helper = DeSerializeHelper::<AllCounts>::new(counter_str);
 	let mut counter = helper.decode().unwrap();
 
-	*counter.entries.get_mut("alice").unwrap() += 1;
-	println!("Incremented counter: {:?}", counter);
+	if let Some(x) = counter.entries.get_mut(acc_str) {
+		*x += 1;
+		println!("Incremented Counter. Current value: {:?}", counter.entries.get(acc_str).unwrap());
+	} else {
+		println!("No counter found for {}, adding new.", acc_str);
+		counter.entries.insert(acc_str.to_string(), 0);
+	}
 
 	retval = write_counter_state(counter);
 	return retval;
@@ -294,9 +303,7 @@ struct AllCounts {
 fn create_counter_state() -> sgx_status_t {
 	let mut c_init = AllCounts{ entries: HashMap::<String, u8>::new()};
 
-	let s : String = "alice".to_owned();
-	c_init.entries.insert(s, 1);
-	println!("[Enclave] Init new counter: {:?}", &c_init);
+	println!("[Enclave] Init new account map: {:?}", &c_init);
 	write_counter_state(c_init)
 }
 

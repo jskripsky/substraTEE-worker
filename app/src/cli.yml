@@ -74,6 +74,10 @@ subcommands:
         about: Create a sealed key with the SGX
         version: "0.1"
         author: Alain Brenzikofer
+    - count:
+        about:  Count plut one from account given as argument. If account does not exist start from 0.
+        args:
+            - account
     # The name of this subcommand will be 'subcmd' which can be accessed in your
     # Rust code later
     # - subcmd:
