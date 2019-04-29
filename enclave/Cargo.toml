@@ -26,3 +26,4 @@ sgx_crypto_helper = { path = "../rust-sgx-sdk/samplecode/static-data-distributio
 
 [dependencies]
 serde_json = { path = "../rust-sgx-sdk/third_party/serde-rs/json" }
+schnorrkel = "0.1.1"
