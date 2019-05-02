@@ -41,7 +41,8 @@ extern crate sgx_serialize;
 extern crate primitives;
 use primitives::{ed25519, sr25519};
 use primitives::crypto::UncheckedFrom;
-
+extern crate twox_hash;
+use twox_hash;
 //extern crate keyring;
 extern crate my_node_runtime;
 use my_node_runtime::{AccountId, UncheckedExtrinsic, CheckedExtrinsic, Call, BalancesCall, Hash, SubstraTEEProxyCall};
