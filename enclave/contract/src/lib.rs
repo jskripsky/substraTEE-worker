@@ -77,6 +77,11 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+
+#[macro_use]
+extern crate sgx_tstd as std;
+use std::prelude::v1::*;
+
 #[macro_use]
 mod gas;
 
@@ -94,8 +99,10 @@ use crate::account_db::{AccountDb, DirectAccountDb};
 #[cfg(feature = "std")]
 use serde::{Serialize, Deserialize};
 use substrate_primitives::crypto::UncheckedFrom;
-use rstd::prelude::*;
-use rstd::marker::PhantomData;
+//use rstd::prelude::*;
+//use rstd::marker::PhantomData;
+use core::marker::PhantomData;
+
 use parity_codec::{Codec, Encode, Decode};
 use runtime_primitives::traits::{Hash, As, SimpleArithmetic, Bounded, StaticLookup, Zero};
 use srml_support::dispatch::{Result, Dispatchable};
@@ -317,221 +324,197 @@ impl<T: Trait> ComputeDispatchFee<T::Call, BalanceOf<T>> for DefaultDispatchFeeC
 	}
 }
 
-decl_module! {
-	/// Contracts module.
-	pub struct Module<T: Trait> for enum Call where origin: <T as system::Trait>::Origin {
-		fn deposit_event<T>() = default;
 
-		/// Updates the schedule for metering contracts.
-		///
-		/// The schedule must have a greater version than the stored schedule.
-		pub fn update_schedule(schedule: Schedule<T::Gas>) -> Result {
-			if <Module<T>>::current_schedule().version >= schedule.version {
-				return Err("new schedule must have a greater version than current");
-			}
+/// Updates the schedule for metering contracts.
+///
+/// The schedule must have a greater version than the stored schedule.
+pub fn update_schedule(schedule: Schedule<T::Gas>) -> Result {
+	if <Module<T>>::current_schedule().version >= schedule.version {
+		return Err("new schedule must have a greater version than current");
+	}
 
-			Self::deposit_event(RawEvent::ScheduleUpdated(schedule.version));
-			<CurrentSchedule<T>>::put(schedule);
+	Self::deposit_event(RawEvent::ScheduleUpdated(schedule.version));
+	<CurrentSchedule<T>>::put(schedule);
 
-			Ok(())
-		}
+	Ok(())
+}
 
-		/// Stores the given binary Wasm code into the chain's storage and returns its `codehash`.
-		/// You can instantiate contracts only with stored code.
-		pub fn put_code(
-			origin,
-			#[compact] gas_limit: T::Gas,
-			code: Vec<u8>
-		) -> Result {
-			let origin = ensure_signed(origin)?;
-			let schedule = <Module<T>>::current_schedule();
+/// Makes a call to an account, optionally transferring some balance.
+///
+/// * If the account is a smart-contract account, the associated code will be
+/// executed and any value will be transferred.
+/// * If the account is a regular account, any value will be transferred.
+/// * If no account exists and the call value is not less than `existential_deposit`,
+/// a regular account will be created and any value will be transferred.
+pub fn call(
+	//origin,
+	dest: <T::Lookup as StaticLookup>::Source,
+	value: BalanceOf<T>,
+	gas_limit: T::Gas,
+	data: Vec<u8>
+) -> Result {
+	//let origin = ensure_signed(origin)?;
+	let dest = T::Lookup::lookup(dest)?;
 
-			let (mut gas_meter, imbalance) = gas::buy_gas::<T>(&origin, gas_limit)?;
+	// Pay for the gas upfront.
+	//
+	// NOTE: it is very important to avoid any state changes before
+	// paying for the gas.
+	let (mut gas_meter, imbalance) = gas::buy_gas::<T>(&origin, gas_limit)?;
 
-			let result = wasm::save_code::<T>(code, &mut gas_meter, &schedule);
-			if let Ok(code_hash) = result {
-				Self::deposit_event(RawEvent::CodeStored(code_hash));
-			}
+	let cfg = Config::preload();
+	let vm = crate::wasm::WasmVm::new(&cfg.schedule);
+	let loader = crate::wasm::WasmLoader::new(&cfg.schedule);
+	let mut ctx = ExecutionContext::top_level(origin.clone(), &cfg, &vm, &loader);
 
-			gas::refund_unused_gas::<T>(&origin, gas_meter, imbalance);
+	let result = ctx.call(dest, value, &mut gas_meter, &data, exec::EmptyOutputBuf::new());
 
-			result.map(|_| ())
-		}
+	if let Ok(_) = result {
+		// Commit all changes that made it thus far into the persistent storage.
+		DirectAccountDb.commit(ctx.overlay.into_change_set());
 
-		/// Makes a call to an account, optionally transferring some balance.
-		///
-		/// * If the account is a smart-contract account, the associated code will be
-		/// executed and any value will be transferred.
-		/// * If the account is a regular account, any value will be transferred.
-		/// * If no account exists and the call value is not less than `existential_deposit`,
-		/// a regular account will be created and any value will be transferred.
-		pub fn call(
-			origin,
-			dest: <T::Lookup as StaticLookup>::Source,
-			#[compact] value: BalanceOf<T>,
-			#[compact] gas_limit: T::Gas,
-			data: Vec<u8>
-		) -> Result {
-			let origin = ensure_signed(origin)?;
-			let dest = T::Lookup::lookup(dest)?;
+		// Then deposit all events produced.
+		ctx.events.into_iter().for_each(Self::deposit_event);
+	}
 
-			// Pay for the gas upfront.
-			//
-			// NOTE: it is very important to avoid any state changes before
-			// paying for the gas.
-			let (mut gas_meter, imbalance) = gas::buy_gas::<T>(&origin, gas_limit)?;
+	// Refund cost of the unused gas.
+	//
+	// NOTE: This should go after the commit to the storage, since the storage changes
+	// can alter the balance of the caller.
+	gas::refund_unused_gas::<T>(&origin, gas_meter, imbalance);
 
-			let cfg = Config::preload();
-			let vm = crate::wasm::WasmVm::new(&cfg.schedule);
-			let loader = crate::wasm::WasmLoader::new(&cfg.schedule);
-			let mut ctx = ExecutionContext::top_level(origin.clone(), &cfg, &vm, &loader);
+	// Dispatch every recorded call with an appropriate origin.
+	ctx.calls.into_iter().for_each(|(who, call)| {
+		let result = call.dispatch(RawOrigin::Signed(who.clone()).into());
+		Self::deposit_event(RawEvent::Dispatched(who, result.is_ok()));
+	});
 
-			let result = ctx.call(dest, value, &mut gas_meter, &data, exec::EmptyOutputBuf::new());
+	result.map(|_| ())
+}
 
-			if let Ok(_) = result {
-				// Commit all changes that made it thus far into the persistent storage.
-				DirectAccountDb.commit(ctx.overlay.into_change_set());
+/// Creates a new contract from the `codehash` generated by `put_code`, optionally transferring some balance.
+///
+/// Creation is executed as follows:
+///
+/// - The destination address is computed based on the sender and hash of the code.
+/// - The smart-contract account is created at the computed address.
+/// - The `ctor_code` is executed in the context of the newly-created account. Buffer returned
+///   after the execution is saved as the `code` of the account. That code will be invoked
+///   upon any call received by this account.
+/// - The contract is initialized.
+pub fn create(
+//	origin,
+	endowment: BalanceOf<T>,
+	gas_limit: T::Gas,
+	code_hash: CodeHash<T>,
+	data: Vec<u8>
+) -> Result {
+//	let origin = ensure_signed(origin)?;
 
-				// Then deposit all events produced.
-				ctx.events.into_iter().for_each(Self::deposit_event);
-			}
+	// Commit the gas upfront.
+	//
+	// NOTE: It is very important to avoid any state changes before
+	// paying for the gas.
+	let (mut gas_meter, imbalance) = gas::buy_gas::<T>(&origin, gas_limit)?;
 
-			// Refund cost of the unused gas.
-			//
-			// NOTE: This should go after the commit to the storage, since the storage changes
-			// can alter the balance of the caller.
-			gas::refund_unused_gas::<T>(&origin, gas_meter, imbalance);
+	let cfg = Config::preload();
+	let vm = crate::wasm::WasmVm::new(&cfg.schedule);
+	let loader = crate::wasm::WasmLoader::new(&cfg.schedule);
+	let mut ctx = ExecutionContext::top_level(origin.clone(), &cfg, &vm, &loader);
+	let result = ctx.instantiate(endowment, &mut gas_meter, &code_hash, &data);
 
-			// Dispatch every recorded call with an appropriate origin.
-			ctx.calls.into_iter().for_each(|(who, call)| {
-				let result = call.dispatch(RawOrigin::Signed(who.clone()).into());
-				Self::deposit_event(RawEvent::Dispatched(who, result.is_ok()));
-			});
+	if let Ok(_) = result {
+		// Commit all changes that made it thus far into the persistent storage.
+		DirectAccountDb.commit(ctx.overlay.into_change_set());
 
-			result.map(|_| ())
-		}
+		// Then deposit all events produced.
+		ctx.events.into_iter().for_each(Self::deposit_event);
+	}
 
-		/// Creates a new contract from the `codehash` generated by `put_code`, optionally transferring some balance.
-		///
-		/// Creation is executed as follows:
-		///
-		/// - The destination address is computed based on the sender and hash of the code.
-		/// - The smart-contract account is created at the computed address.
-		/// - The `ctor_code` is executed in the context of the newly-created account. Buffer returned
-		///   after the execution is saved as the `code` of the account. That code will be invoked
-		///   upon any call received by this account.
-		/// - The contract is initialized.
-		pub fn create(
-			origin,
-			#[compact] endowment: BalanceOf<T>,
-			#[compact] gas_limit: T::Gas,
-			code_hash: CodeHash<T>,
-			data: Vec<u8>
-		) -> Result {
-			let origin = ensure_signed(origin)?;
+	// Refund cost of the unused gas.
+	//
+	// NOTE: This should go after the commit to the storage, since the storage changes
+	// can alter the balance of the caller.
+	gas::refund_unused_gas::<T>(&origin, gas_meter, imbalance);
 
-			// Commit the gas upfront.
-			//
-			// NOTE: It is very important to avoid any state changes before
-			// paying for the gas.
-			let (mut gas_meter, imbalance) = gas::buy_gas::<T>(&origin, gas_limit)?;
+	// Dispatch every recorded call with an appropriate origin.
+	ctx.calls.into_iter().for_each(|(who, call)| {
+		let result = call.dispatch(RawOrigin::Signed(who.clone()).into());
+		Self::deposit_event(RawEvent::Dispatched(who, result.is_ok()));
+	});
 
-			let cfg = Config::preload();
-			let vm = crate::wasm::WasmVm::new(&cfg.schedule);
-			let loader = crate::wasm::WasmLoader::new(&cfg.schedule);
-			let mut ctx = ExecutionContext::top_level(origin.clone(), &cfg, &vm, &loader);
-			let result = ctx.instantiate(endowment, &mut gas_meter, &code_hash, &data);
+	result.map(|_| ())
+}
 
-			if let Ok(_) = result {
-				// Commit all changes that made it thus far into the persistent storage.
-				DirectAccountDb.commit(ctx.overlay.into_change_set());
 
-				// Then deposit all events produced.
-				ctx.events.into_iter().for_each(Self::deposit_event);
-			}
+struct Storage {
+	/// Number of block delay an extrinsic claim surcharge has.
+	///
+	/// When claim surchage is called by an extrinsic the rent is checked
+	/// for current_block - delay
+	SignedClaimHandicap: T::BlockNumber,
+	/// The minimum amount required to generate a tombstone.
+	TombstoneDeposit: BalanceOf<T>,
+	/// Size of a contract at the time of creation. This is a simple way to ensure
+	/// that empty contracts eventually gets deleted.
+	StorageSizeOffset: u64,
+	/// Price of a byte of storage per one block interval. Should be greater than 0.
+	RentByteFee: BalanceOf<T>,
+	/// The amount of funds a contract should deposit in order to offset
+	/// the cost of one byte.
+	///
+	/// Let's suppose the deposit is 1,000 BU (balance units)/byte and the rent is 1 BU/byte/day,
+	/// then a contract with 1,000,000 BU that uses 1,000 bytes of storage would pay no rent.
+	/// But if the balance reduced to 500,000 BU and the storage stayed the same at 1,000,
+	/// then it would pay 500 BU/day.
+	RentDepositOffset: BalanceOf<T>,
+	/// Reward that is received by the party whose touch has led
+	/// to removal of a contract.
+	SurchargeReward: BalanceOf<T>,
+	/// The fee required to make a transfer.
+	TransferFee: BalanceOf<T>,
+	/// The fee required to create an account.
+	CreationFee: BalanceOf<T>,
+	/// The fee to be paid for making a transaction; the base.
+	TransactionBaseFee: BalanceOf<T>,
+	/// The fee to be paid for making a transaction; the per-byte portion.
+	TransactionByteFee: BalanceOf<T>,
+	/// The fee required to create a contract instance.
+	ContractFee: BalanceOf<T>, // = BalanceOf::<T>::sa(21),
+	/// The base fee charged for calling into a contract.
+	CallBaseFee: T::Gas, // = T::Gas::sa(135),
+	/// The base fee charged for creating a contract.
+	CreateBaseFee: T::Gas, // = T::Gas::sa(175),
+	/// The price of one unit of gas.
+	GasPrice: BalanceOf<T>, // = BalanceOf::<T>::sa(1),
+	/// The maximum nesting level of a call/create stack.
+	MaxDepth: u32, // = 100,
+	/// The maximum amount of gas that could be expended per block.
+	BlockGasLimit: T::Gas, // = T::Gas::sa(1_000_000),
+	/// Gas spent so far in this block.
+	GasSpent: T::Gas,
+	/// Current cost schedule for contracts.
+	CurrentSchedule: Schedule<T::Gas>, // = Schedule::default(),
+/*	/// A mapping from an original code hash to the original code, untouched by instrumentation.
+	pub PristineCode: map CodeHash<T> => Option<Vec<u8>>,
+	/// A mapping between an original code hash and instrumented wasm code, ready for execution.
+	pub CodeStorage: map CodeHash<T> => Option<wasm::PrefabWasmModule>,
+*/
+	/// The subtrie counter.
+	pub AccountCounter: u64, // = 0,
+/*
+	/// The code associated with a given account.
+	pub ContractInfoOf: map T::AccountId => Option<ContractInfo<T>>,
+	*/
+}
 
-			// Refund cost of the unused gas.
-			//
-			// NOTE: This should go after the commit to the storage, since the storage changes
-			// can alter the balance of the caller.
-			gas::refund_unused_gas::<T>(&origin, gas_meter, imbalance);
-
-			// Dispatch every recorded call with an appropriate origin.
-			ctx.calls.into_iter().for_each(|(who, call)| {
-				let result = call.dispatch(RawOrigin::Signed(who.clone()).into());
-				Self::deposit_event(RawEvent::Dispatched(who, result.is_ok()));
-			});
-
-			result.map(|_| ())
-		}
-
-		/// Allows block producers to claim a small reward for evicting a contract. If a block producer
-		/// fails to do so, a regular users will be allowed to claim the reward.
-		///
-		/// If contract is not evicted as a result of this call, no actions are taken and
-		/// the sender is not eligible for the reward.
-		fn claim_surcharge(origin, dest: T::AccountId, aux_sender: Option<T::AccountId>) {
-			let origin = origin.into();
-			let (signed, rewarded) = match origin {
-				Some(system::RawOrigin::Signed(ref account)) if aux_sender.is_none() => {
-					(true, account)
-				},
-				Some(system::RawOrigin::Inherent) if aux_sender.is_some() => {
-					(false, aux_sender.as_ref().expect("checked above"))
-				},
-				_ => return Err("Invalid surcharge claim: origin must be signed or \
-								inherent and auxiliary sender only provided on inherent")
-			};
-
-			// Add some advantage for block producers (who send unsigned extrinsics) by
-			// adding a handicap: for signed extrinsics we use a slightly older block number
-			// for the eviction check. This can be viewed as if we pushed regular users back in past.
-			let handicap = if signed {
-				<Module<T>>::signed_claim_handicap()
-			} else {
-				Zero::zero()
-			};
-
-			// If poking the contract has lead to eviction of the contract, give out the rewards.
-			if rent::try_evict::<T>(&dest, handicap) == rent::RentOutcome::Evicted {
-				T::Currency::deposit_into_existing(rewarded, Self::surcharge_reward())?;
-			}
-		}
-
-		fn on_finalize() {
-			<GasSpent<T>>::kill();
-		}
+impl Storage {
+	fn signed_claim_handicap(&self) -> T::BlockNumber {
+		self.SignedClaimHandicap
 	}
 }
 
-decl_event! {
-	pub enum Event<T>
-	where
-		Balance = BalanceOf<T>,
-		<T as system::Trait>::AccountId,
-		<T as system::Trait>::Hash
-	{
-		/// Transfer happened `from` to `to` with given `value` as part of a `call` or `create`.
-		Transfer(AccountId, AccountId, Balance),
-
-		/// Contract deployed by address at the specified address.
-		Instantiated(AccountId, AccountId),
-
-		/// Code with the specified hash has been stored.
-		CodeStored(Hash),
-
-		/// Triggered when the current schedule is updated.
-		ScheduleUpdated(u32),
-
-		/// A call was dispatched from the given account. The bool signals whether it was
-		/// successful execution or not.
-		Dispatched(AccountId, bool),
-
-		/// An event from contract of account.
-		Contract(AccountId, Vec<u8>),
-	}
-}
-
+/*
 decl_storage! {
 	trait Store for Module<T: Trait> as Contract {
 		/// Number of block delay an extrinsic claim surcharge has.
@@ -591,15 +574,17 @@ decl_storage! {
 		pub ContractInfoOf: map T::AccountId => Option<ContractInfo<T>>;
 	}
 }
+*/
 
-impl<T: Trait> OnFreeBalanceZero<T::AccountId> for Module<T> {
-	fn on_free_balance_zero(who: &T::AccountId) {
-		if let Some(ContractInfo::Alive(info)) = <ContractInfoOf<T>>::get(who) {
-			child::kill_storage(&info.trie_id);
-		}
-		<ContractInfoOf<T>>::remove(who);
+
+
+fn on_free_balance_zero(who: &T::AccountId) {
+	if let Some(ContractInfo::Alive(info)) = <ContractInfoOf<T>>::get(who) {
+		child::kill_storage(&info.trie_id);
 	}
+	<ContractInfoOf<T>>::remove(who);
 }
+
 
 /// In-memory cache of configuration values.
 ///

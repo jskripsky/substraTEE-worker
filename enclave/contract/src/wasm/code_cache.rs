@@ -28,7 +28,11 @@
 use crate::gas::{GasMeter, Token};
 use crate::wasm::{prepare, runtime::Env, PrefabWasmModule};
 use crate::{CodeHash, CodeStorage, PristineCode, Schedule, Trait};
-use rstd::prelude::*;
+
+#[macro_use]
+extern crate sgx_tstd as std;
+use std::prelude::v1::*;
+
 use runtime_primitives::traits::{As, CheckedMul, Hash, Bounded};
 use srml_support::StorageMap;
 

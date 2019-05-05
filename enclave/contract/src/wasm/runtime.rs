@@ -21,8 +21,11 @@ use crate::exec::{Ext, VmExecResult, OutputBuf, EmptyOutputBuf, CallReceipt, Ins
 use crate::gas::{GasMeter, Token, GasMeterResult, approx_gas_for_balance};
 use sandbox;
 use system;
-use rstd::prelude::*;
-use rstd::mem;
+
+
+use std::prelude::v1::*;
+use std::mem;
+
 use parity_codec::{Decode, Encode};
 use runtime_primitives::traits::{As, CheckedMul, CheckedAdd, Bounded};
 

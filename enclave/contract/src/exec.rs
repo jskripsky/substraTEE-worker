@@ -19,7 +19,9 @@ use super::{CodeHash, Config, ContractAddressFor, Event, RawEvent, Trait,
 use crate::account_db::{AccountDb, DirectAccountDb, OverlayAccountDb};
 use crate::gas::{GasMeter, Token, approx_gas_for_balance};
 
-use rstd::prelude::*;
+
+use std::prelude::v1::*;
+
 use runtime_primitives::traits::{Bounded, CheckedAdd, CheckedSub, Zero};
 use srml_support::{StorageMap, traits::{WithdrawReason, Currency}};
 use timestamp;

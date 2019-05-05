@@ -25,7 +25,10 @@ use crate::{Schedule, Trait};
 use parity_wasm::elements::{self, Internal, External, MemoryType, Type};
 use pwasm_utils;
 use pwasm_utils::rules;
-use rstd::prelude::*;
+
+
+use std::prelude::v1::*;
+
 use runtime_primitives::traits::As;
 
 struct ContractModule<'a, Gas: 'a> {
