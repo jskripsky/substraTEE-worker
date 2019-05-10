@@ -105,8 +105,8 @@ use core::marker::PhantomData;
 
 use parity_codec::{Codec, Encode, Decode};
 use runtime_primitives::traits::{Hash, As, SimpleArithmetic, Bounded, StaticLookup, Zero};
-use srml_support::dispatch::{Result, Dispatchable};
-use srml_support::{Parameter, StorageMap, StorageValue, decl_module, decl_event, decl_storage, storage::child};
+//use srml_support::dispatch::{Result, Dispatchable};
+//use srml_support::{Parameter, StorageMap, StorageValue, storage::child};
 use srml_support::traits::{OnFreeBalanceZero, OnUnbalanced, Currency};
 use system::{ensure_signed, RawOrigin};
 use substrate_primitives::storage::well_known_keys::CHILD_STORAGE_KEY_PREFIX;
@@ -447,19 +447,18 @@ pub fn create(
 }
 
 
-struct Storage {
 	/// Number of block delay an extrinsic claim surcharge has.
 	///
 	/// When claim surchage is called by an extrinsic the rent is checked
 	/// for current_block - delay
-	SignedClaimHandicap: T::BlockNumber,
+struct SignedClaimHandicap { Query : T::BlockNumber }
 	/// The minimum amount required to generate a tombstone.
-	TombstoneDeposit: BalanceOf<T>,
+struct TombstoneDeposit { Query: BalanceOf<T> }
 	/// Size of a contract at the time of creation. This is a simple way to ensure
 	/// that empty contracts eventually gets deleted.
-	StorageSizeOffset: u64,
+struct StorageSizeOffset { Query: u64 }
 	/// Price of a byte of storage per one block interval. Should be greater than 0.
-	RentByteFee: BalanceOf<T>,
+struct RentByteFee{Query: BalanceOf<T>}
 	/// The amount of funds a contract should deposit in order to offset
 	/// the cost of one byte.
 	///
@@ -467,45 +466,76 @@ struct Storage {
 	/// then a contract with 1,000,000 BU that uses 1,000 bytes of storage would pay no rent.
 	/// But if the balance reduced to 500,000 BU and the storage stayed the same at 1,000,
 	/// then it would pay 500 BU/day.
-	RentDepositOffset: BalanceOf<T>,
+struct RentDepositOffset{ Query : BalanceOf<T> }
 	/// Reward that is received by the party whose touch has led
 	/// to removal of a contract.
-	SurchargeReward: BalanceOf<T>,
+struct SurchargeReward{ Query : BalanceOf<T> }
 	/// The fee required to make a transfer.
-	TransferFee: BalanceOf<T>,
+struct TransferFee{ Query : BalanceOf<T> }
 	/// The fee required to create an account.
-	CreationFee: BalanceOf<T>,
+struct CreationFee{ Query : BalanceOf<T> }
 	/// The fee to be paid for making a transaction; the base.
-	TransactionBaseFee: BalanceOf<T>,
+struct TransactionBaseFee{ Query : BalanceOf<T> }
 	/// The fee to be paid for making a transaction; the per-byte portion.
-	TransactionByteFee: BalanceOf<T>,
+struct TransactionByteFee{ Query : BalanceOf<T> }
 	/// The fee required to create a contract instance.
-	ContractFee: BalanceOf<T>, // = BalanceOf::<T>::sa(21),
+struct ContractFee{ Query : BalanceOf<T> } // = BalanceOf::<T>::sa(21),
 	/// The base fee charged for calling into a contract.
-	CallBaseFee: T::Gas, // = T::Gas::sa(135),
+struct CallBaseFee{ Query : T::Gas } // = T::Gas::sa(135),
 	/// The base fee charged for creating a contract.
-	CreateBaseFee: T::Gas, // = T::Gas::sa(175),
+struct CreateBaseFee{ Query : T::Gas } // = T::Gas::sa(175),
 	/// The price of one unit of gas.
-	GasPrice: BalanceOf<T>, // = BalanceOf::<T>::sa(1),
+struct GasPrice { Query : BalanceOf<T> } // = BalanceOf::<T>::sa(1),
 	/// The maximum nesting level of a call/create stack.
-	MaxDepth: u32, // = 100,
+struct MaxDepth{ Query : u32 } // = 100,
 	/// The maximum amount of gas that could be expended per block.
-	BlockGasLimit: T::Gas, // = T::Gas::sa(1_000_000),
+struct BlockGasLimit{ Query : T::Gas } // = T::Gas::sa(1_000_000),
 	/// Gas spent so far in this block.
-	GasSpent: T::Gas,
+struct GasSpent{ Query : T::Gas }
 	/// Current cost schedule for contracts.
-	CurrentSchedule: Schedule<T::Gas>, // = Schedule::default(),
-/*	/// A mapping from an original code hash to the original code, untouched by instrumentation.
-	pub PristineCode: map CodeHash<T> => Option<Vec<u8>>,
+struct CurrentSchedule{ Query : Schedule<T::Gas>} // = Schedule::default(),
+	/// A mapping from an original code hash to the original code, untouched by instrumentation.
+pub struct PristineCode { Query : u32 }
+impl PristineCode{
+	fn get(ch: CodeHash<T>) -> Option<Vec<u8>> {
+		panic!("unimplemented");
+	}
+}
 	/// A mapping between an original code hash and instrumented wasm code, ready for execution.
-	pub CodeStorage: map CodeHash<T> => Option<wasm::PrefabWasmModule>,
-*/
+pub struct CodeStorage{ Query : u32 }
+impl CodeStorage {
+	fn get(ch: CodeHash<T>) -> Option<wasm::PrefabWasmModule>{
+		panic!("unimplemented");
+	}
+}
+
+
 	/// The subtrie counter.
-	pub AccountCounter: u64, // = 0,
-/*
+pub struct AccountCounter<T>{ Query : u64 } // = 0,
+impl AccountCounter<T>{
+	fn mutate<R, F: FnOnce(&mut Self::Query) -> R>(&self, func: F) {
+		let mut val = self.Query;
+		let ret = f(&mut val);
+		ret
+	}
+}
+
 	/// The code associated with a given account.
-	pub ContractInfoOf: map T::AccountId => Option<ContractInfo<T>>,
-	*/
+pub struct ContractInfoOf<T>{ }
+impl ContractInfoOf<T> {
+	fn insert(account: T::AccountId) {
+		panic!("unimplemented");
+	}
+	fn get(account: T::AccountId) -> Option<ContractInfo<T>> {
+		panic!("unimplemented");
+	}
+}
+
+
+
+trait Store {
+	type AccountCounter;
+	type SignedClaimHandicap;
 }
 
 impl Storage {
@@ -678,4 +708,82 @@ impl<Gas: As<u64>> Default for Schedule<Gas> {
 			enable_println: false,
 		}
 	}
+}
+
+// brenzi: copied over form expanded macro
+#[structural_match]
+#[rustc_copy_clone_marker]
+pub struct Module<T: Trait>(::srml_support::rstd::marker::PhantomData<(T)>);
+#[automatically_derived]
+#[allow(unused_qualifications)]
+impl <T: ::std::clone::Clone + Trait> ::std::clone::Clone for Module<T> {
+	#[inline]
+	fn clone(&self) -> Module<T> {
+		match *self {
+			Module(ref __self_0_0) =>
+				Module(::std::clone::Clone::clone(&(*__self_0_0))),
+		}
+	}
+}
+#[automatically_derived]
+#[allow(unused_qualifications)]
+impl <T: ::std::marker::Copy + Trait> ::std::marker::Copy for Module<T> {
+}
+#[automatically_derived]
+#[allow(unused_qualifications)]
+impl <T: ::std::cmp::PartialEq + Trait> ::std::cmp::PartialEq for
+Module<T> {
+	#[inline]
+	fn eq(&self, other: &Module<T>) -> bool {
+		match *other {
+			Module(ref __self_1_0) =>
+				match *self {
+					Module(ref __self_0_0) => (*__self_0_0) == (*__self_1_0),
+				},
+		}
+	}
+	#[inline]
+	fn ne(&self, other: &Module<T>) -> bool {
+		match *other {
+			Module(ref __self_1_0) =>
+				match *self {
+					Module(ref __self_0_0) => (*__self_0_0) != (*__self_1_0),
+				},
+		}
+	}
+}
+#[automatically_derived]
+#[allow(unused_qualifications)]
+impl <T: ::std::cmp::Eq + Trait> ::std::cmp::Eq for Module<T> {
+	#[inline]
+	#[doc(hidden)]
+	fn assert_receiver_is_total_eq(&self) -> () {
+		{
+			let _:
+				::std::cmp::AssertParamIsEq<::srml_support::rstd::marker::PhantomData<(T)>>;
+		}
+	}
+}
+#[automatically_derived]
+#[allow(unused_qualifications)]
+impl <T: ::std::fmt::Debug + Trait> ::std::fmt::Debug for Module<T> {
+	fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+		match *self {
+			Module(ref __self_0_0) => {
+				let mut debug_trait_builder = f.debug_tuple("Module");
+				let _ = debug_trait_builder.field(&&(*__self_0_0));
+				debug_trait_builder.finish()
+			}
+		}
+	}
+}
+
+
+// dummy replacement for Event
+pub struct Event<T> {
+
+}
+
+pub struct RawEvent<T> {
+
 }

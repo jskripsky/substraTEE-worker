@@ -22,7 +22,8 @@ use crate::wasm::env_def::FunctionImplProvider;
 use crate::exec::{Ext, EmptyOutputBuf, VmExecResult};
 use crate::gas::GasMeter;
 
-use rstd::prelude::*;
+//use rstd::prelude::*;
+use std::prelude::v1::*;
 use parity_codec::{Encode, Decode};
 use sandbox;
 
