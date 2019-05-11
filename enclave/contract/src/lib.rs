@@ -447,7 +447,7 @@ pub fn create(
 }
 
 
-struct Storage {
+pub struct Storage {
 	/// Number of block delay an extrinsic claim surcharge has.
 	///
 	/// When claim surchage is called by an extrinsic the rent is checked
