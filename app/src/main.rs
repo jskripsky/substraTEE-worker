@@ -62,6 +62,7 @@ use primitives::{
 use substrate_keyring::AccountKeyring;
 use substrate_api_client::{Api, hexstr_to_u256, hexstr_to_vec};
 use my_node_runtime::{UncheckedExtrinsic, SubstraTEEProxyCall, Event};
+use my_node_runtime::substratee_proxy::RawEvent::{Forwarded, CallConfirmed};
 use parity_codec::{Decode, Encode, Codec, Input, HasCompact};
 use primitive_types::U256;
 
@@ -170,12 +171,12 @@ fn worker(port: &str) -> () {
 						Event::substratee_proxy(pe) => {
 							println!("\n>>>>>>>>>> substratee_Proxy event: {:?}", pe);
 							match &pe {
-								my_node_runtime::substratee_proxy::RawEvent::Forwarded(sender, payload) => {
+								Forwarded(sender, payload) => {
 									println!("received forward call from {:?} with payload {}", sender, hex::encode(payload));
 									test_pipeline(enclave.geteid(), payload.to_vec(), &mut status, port);
 
 								},
-								my_node_runtime::substratee_proxy::RawEvent::CallConfirmed(sender, payload) => {
+								CallConfirmed(sender, payload) => {
 									println!("received confirm call from {:?} with payload {}", sender, hex::encode(payload));
 								},
 								_ => {
@@ -201,21 +202,15 @@ fn decryt_and_process_payload(eid: sgx_enclave_id_t, mut ciphertext: Vec<u8>, re
 	// encoded message 'b"Alice, 42"'
 	println!("");
 	println!("*** Decrypt and process the payload");
-	let extrinsic_size = 137;
-	let mut unchecked_extrinsic : Vec<u8> = vec![0u8; extrinsic_size as usize];
 
 	let mut api = Api::new(format!("ws://127.0.0.1:{}", port));
 	api.init();
-	let genesis_hash = api.genesis_hash.unwrap().as_bytes().to_vec();
-
-	let mut key = [0; 32];
 	// get the public signing key of the TEE
 	let ecc_key = fs::read(ECC_PUB_KEY).expect("Unable to open ecc pubkey file");
-	key.copy_from_slice(&ecc_key[..]);
-	println!("\n\n[+] Got ECC public key of TEE = {:?}\n\n", key);
+	println!("\n\n[+] Got ECC public key of TEE = {:?}\n\n", &ecc_key[..]);
 
 	// get enclaves's AccountNonce
-	let accountid = ed25519::Public::from_raw(key);
+	let accountid = ed25519::Public::from_slice(&ecc_key[..]);
 	println!("Enclaves account id: {:?}", accountid);
 
 	let nonce_str = api.get_storage("System", "AccountNonce", Some(accountid.encode())).unwrap();
@@ -224,13 +219,18 @@ fn decryt_and_process_payload(eid: sgx_enclave_id_t, mut ciphertext: Vec<u8>, re
 	let nonce_u = hexstr_to_u256(nonce_str);
 	let nonce_bytes = U256::encode(&nonce_u);
 
+	let genesis_hash = api.genesis_hash.unwrap();
+
+	let extrinsic_size = 137us;
+	let mut unchecked_extrinsic : Vec<u8> = vec![0u8; extrinsic_size];
+
 	let result = unsafe {
 		call_counter(eid,
 					 retval,
 					 ciphertext.as_mut_ptr(),
 					 ciphertext.len() as u32,
 					 genesis_hash.as_ptr(),
-					 genesis_hash.len() as u32,
+					 genesis_hash.len_bytes() as u32,
 					 nonce_bytes.as_ptr(),
 					 nonce_bytes.len() as u32,
 					 unchecked_extrinsic.as_mut_ptr(),
@@ -267,15 +267,15 @@ fn get_public_key_tee()
 	};
 
 	// define the size
-	let pubkey_size = 8192;
-	let mut pubkey = vec![0u8; pubkey_size as usize];
+	let pubkey_size = 8192us;
+	let mut pubkey = vec![0u8; pubkey_size];
 
 	let mut retval = sgx_status_t::SGX_SUCCESS;
 	let result = unsafe {
 		get_rsa_encryption_pubkey(enclave.geteid(),
 								  &mut retval,
 								  pubkey.as_mut_ptr(),
-								  pubkey_size
+								  pubkey_size as u32
 		)
 	};
 
@@ -316,15 +316,15 @@ fn get_signing_key_tee() {
 	};
 
 	// define the size
-	let pubkey_size = 32;
-	let mut pubkey = [0u8; 32];
+	let pubkey_size = 32us;
+	let mut pubkey = [0u8; pubkey_size];
 
 	let mut retval = sgx_status_t::SGX_SUCCESS;
 	let result = unsafe {
 		get_ecc_signing_pubkey(enclave.geteid(),
 								  &mut retval,
 								  pubkey.as_mut_ptr(),
-								  pubkey_size
+								  pubkey_size as u32
 		)
 	};
 
@@ -395,7 +395,7 @@ fn test_get_counter() {
 	let result = unsafe {
 		get_counter(enclave.geteid(),
 					&mut retval,
-					account.to_vec().as_ptr(),
+					account.as_ptr(),
 					account.len() as u32,
 					&mut value)
 	};
@@ -408,14 +408,14 @@ fn test_get_counter() {
 
 // debug function called from tests
 fn get_test_ciphertext(eid: sgx_enclave_id_t, retval: &mut sgx_status_t) -> Vec<u8> {
-	let pubkey_size = 8192;
-	let mut pubkey = vec![0u8; pubkey_size as usize];
+	let pubkey_size = 8192us;
+	let mut pubkey = vec![0u8; pubkey_size];
 
 	let result = unsafe {
 		get_rsa_encryption_pubkey(eid,
 								  retval,
 								  pubkey.as_mut_ptr(),
-								  pubkey_size
+								  pubkey_size as u32
 		)
 	};
 
@@ -429,7 +429,7 @@ fn get_test_ciphertext(eid: sgx_enclave_id_t, retval: &mut sgx_status_t) -> Vec<
 	let rsa_pubkey: Rsa3072PubKey = serde_json::from_str(str::from_utf8(&pubkey[..]).unwrap()).unwrap();
 
 	let mut ciphertext : Vec<u8> = Vec::new();
-	let plaintext = b"Alice,42".to_vec();
+	let plaintext = b"Alice,42";
 	rsa_pubkey.encrypt_buffer(&plaintext, &mut ciphertext).unwrap();
 	println!("ciphertext = {:?}", ciphertext);
 	return ciphertext;
