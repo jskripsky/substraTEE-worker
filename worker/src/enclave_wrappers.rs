@@ -49,7 +49,7 @@ pub fn process_forwarded_payload(eid: sgx_enclave_id_t, ciphertext: Vec<u8>, ret
 	api.init();
 
 	// decrypt and process the payload. we will get an extrinsic back
-	let xt = decryt_and_process_payload(eid, ciphertext, retval, port);
+	let xt = decrypt_and_process_payload(eid, ciphertext, retval, port);
 
 	let mut _xthex = hex::encode(xt.encode());
 	_xthex.insert_str(0, "0x");
@@ -60,7 +60,7 @@ pub fn process_forwarded_payload(eid: sgx_enclave_id_t, ciphertext: Vec<u8>, ret
 	println!("[+] Transaction got finalized. Hash: {:?}\n", tx_hash);
 }
 
-pub fn decryt_and_process_payload(eid: sgx_enclave_id_t, mut ciphertext: Vec<u8>, retval: &mut sgx_status_t, port: &str, ) -> UncheckedExtrinsic {
+pub fn decrypt_and_process_payload(eid: sgx_enclave_id_t, mut ciphertext: Vec<u8>, retval: &mut sgx_status_t, port: &str, ) -> UncheckedExtrinsic {
 	println!("[>] Decrypt and process the payload");
 
 	// initiate the api and get the genesis hash
