@@ -81,27 +81,23 @@ pub fn get_account_nonce(api: &Api, user: &str) -> U256 {
 
 // function to get the ED25519 public key from the enclave
 pub fn get_enclave_ecc_pub_key() -> ed25519::Public {
-	let mut key = [0; 32];
-	let ecc_key = fs::read(ECC_PUB_KEY).expect("Unable to open ECC public key file");
-	key.copy_from_slice(&ecc_key[..]);
-	info!("[+] Got ECC public key of TEE = {:?}\n\n", key);
+	let key = fs::read(ECC_PUB_KEY).expect("Unable to open ECC public key file");
+	info!("[+] Got ECC public key of TEE = {:?}\n\n", &key);
 
-	ed25519::Public::from_raw(key)
+	ed25519::Public::from_slice(&key)
 }
 
 // function to get the RSA3072 public key from the enclave
 pub fn get_enclave_rsa_pub_key() -> Rsa3072PubKey {
-
-	let data = fs::read_to_string(RSA_PUB_KEY).expect("Unable to open rsa pubkey file");
-	let rsa_pubkey: Rsa3072PubKey = serde_json::from_str(&data).unwrap();
+	let key = fs::read(RSA_PUB_KEY).expect("Unable to open rsa pubkey file");
+	let rsa_pubkey: Rsa3072PubKey = serde_json::from_slice(&key).unwrap();
 	info!("[+] Got RSA public key of TEE = {:?}", rsa_pubkey);
 
 	rsa_pubkey
 }
 
 // function to get the counter from the substraTEE-worker
-pub fn get_counter(user: &'static str)
-{
+pub fn get_counter(user: &'static str) {
 	// Client thread
 	let client = thread::spawn(move || {
 		connect("ws://127.0.0.1:2019", |out| {
@@ -138,7 +134,7 @@ pub fn fund_account(api: &Api, user: &str, amount: u128, nonce: U256, genesis_ha
 
 // function to compose the extrinsic for a Balance::transfer call
 pub fn compose_extrinsic(from: &str, function: Call, index: U256, genesis_hash: Hash) -> UncheckedExtrinsic {
-	let signer = pair_from_suri(from, Some(""));
+	let signer = pair_from_suri(from, Some("")); // FIXME: None?
 	let era = Era::immortal();
 
 	let index = Index::from(index.low_u64());
