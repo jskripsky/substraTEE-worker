@@ -30,7 +30,7 @@ use parity_codec::{Decode, Encode};
 use primitive_types::U256;
 
 // function to get the account nonce of a user
-pub fn get_account_nonce(api: &substrate_api_client::Api, user: [u8; 32]) -> U256 {
+pub fn get_account_nonce(api: &Api, user: [u8; 32]) -> U256 {
 	info!("[>] Get account nonce");
 
 	let accountid = ed25519::Public::from_raw(user);

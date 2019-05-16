@@ -27,7 +27,7 @@ use node_primitives::{Index,Balance};
 use runtime_primitives::generic::Era;
 use parity_codec::{Encode, Decode, Compact};
 use sgx_crypto_helper::rsa3072::Rsa3072PubKey;
-use substrate_api_client::{hexstr_to_u256, hexstr_to_vec};
+use substrate_api_client::{Api, hexstr_to_u256, hexstr_to_vec};
 use my_node_runtime::{
 	UncheckedExtrinsic,
 	Call,
@@ -58,7 +58,7 @@ pub fn user_to_pubkey(user: &str) -> ed25519::Public {
 	.expect("Invalid 'to' URI; expecting either a secret URI or a public URI.");
 }
 
-pub fn get_from_storage(api: &substrate_api_client::Api, user: &str, category: &str, item: &str) -> U256 {
+pub fn get_from_storage(api: &Api, user: &str, category: &str, item: &str) -> U256 {
 	println!("[>] Get {}'s {}", user, item);
 
 	let accountid = user_to_pubkey(user);
@@ -70,12 +70,12 @@ pub fn get_from_storage(api: &substrate_api_client::Api, user: &str, category: &
 }
 
 // function to get the free balance of a user
-pub fn get_free_balance(api: &substrate_api_client::Api, user: &str) -> U256 {
+pub fn get_free_balance(api: &Api, user: &str) -> U256 {
 	get_from_storage(api, user, "Balances", "FreeBalance");
 }
 
 // function to get the account nonce of a user
-pub fn get_account_nonce(api: &substrate_api_client::Api, user: &str) -> U256 {
+pub fn get_account_nonce(api: &Api, user: &str) -> U256 {
 	get_from_storage(api, user, "System", "AccountNonce");
 }
 
@@ -119,7 +119,7 @@ pub fn get_counter(user: &'static str)
 }
 
 // function to fund an account
-pub fn fund_account(api: &substrate_api_client::Api, user: &str, amount: u128, nonce: U256, genesis_hash: Hash) {
+pub fn fund_account(api: &Api, user: &str, amount: u128, nonce: U256, genesis_hash: Hash) {
 	println!("[>] Fund {}'s account with {}", user, amount);
 
 	// build the extrinsic for funding
@@ -166,7 +166,7 @@ pub fn extrinsic_fund(from: &str, to: &str, free: u128, reserved: u128, index: U
 	compose_extrinsic(from, function, index, genesis_hash);
 }
 
-pub fn transfer_amount(api: &substrate_api_client::Api, from: &str, to: ed25519::Public, amount: U256, nonce: U256, genesis_hash: Hash) {
+pub fn transfer_amount(api: &Api, from: &str, to: ed25519::Public, amount: U256, nonce: U256, genesis_hash: Hash) {
 	println!("[>] Transfer {} from '{}' to '{}'", amount, from, to);
 
 	// build the extrinsic for transfer
@@ -197,7 +197,7 @@ pub fn compose_extrinsic_substratee_call_worker(sender: &str, payload_encrypted:
 }
 
 // subscribes to he substratee_proxy events of type CallConfirmed
-pub fn subscribe_to_call_confirmed(api: substrate_api_client::Api) -> Vec<u8>{
+pub fn subscribe_to_call_confirmed(api: Api) -> Vec<u8>{
 	let (events_in, events_out) = channel();
 
 	let _eventsubscriber = thread::Builder::new()
