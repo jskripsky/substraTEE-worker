@@ -211,9 +211,8 @@ pub fn subscribe_to_call_confirmed(api: Api) -> Vec<u8>{
 	loop {
 		let event_str = events_out.recv().unwrap();
 
-		let _unhex = hexstr_to_vec(event_str);
-		let mut _er_enc = _unhex.as_slice();
-		let _events = Vec::<system::EventRecord::<Event>>::decode(&mut _er_enc);
+		let mut _unhex = hexstr_to_vec(event_str);
+		let _events = Vec::<system::EventRecord::<Event>>::decode(&mut _unhex);
 		match _events {
 			Some(evts) => {
 				for evr in &evts {
