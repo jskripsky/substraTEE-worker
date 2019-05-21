@@ -15,6 +15,6 @@
 
 */
 
-pub const RSA3072_SEALED_KEY_FILE: &'static str = "./bin/rsa3072_key_sealed.bin";
-pub const ED25519_SEALED_KEY_FILE: &'static str = "./bin/ed25519_key_sealed.bin";
-pub const COUNTERSTATE:            &'static str = "./bin/sealed_counter_state.bin";
+pub const RSA3072_SEALED_KEY_FILE: &str = "./bin/rsa3072_key_sealed.bin";
+pub const ED25519_SEALED_KEY_FILE: &str = "./bin/ed25519_key_sealed.bin";
+pub const COUNTERSTATE:            &str = "./bin/sealed_counter_state.bin";
